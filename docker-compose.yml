@@ -1,8 +1,17 @@
 name: enterprise          # fixes the project name, so volumes are enterprise_db_data etc.
 
+# shared hardening, merged into every service with <<: *hardening
+x-hardening: &hardening
+  read_only: true
+  cap_drop: [ALL]
+  security_opt: 
+    - no-new-privileges:true
+  restart: unless-stopped
+
 services:
   # added step by step
   mariadb:
+    <<: *hardening
     build: 
       context: ./mariadb    # folder with Dockerfile + init.sql
     image: mariadb:1.0      # name for the built image
@@ -21,13 +30,9 @@ services:
       - db_data:/var/lib/mysql   # init.sql is now inside the image
     networks:
       - backend                  # no ports: section at all
-    read_only: true
     tmpfs:
       - /tmp
       - /run/mysqld              # socket and pid file
-    cap_drop: [ALL]
-    security_opt:
-      - no-new-privileges:true
     healthcheck:                 # overrides the Dockerfile HEALTHCHECK
       test: ["CMD", "healthcheck.sh", "--connect", "--innodb_initialized"]
       interval: 10s
@@ -39,8 +44,13 @@ services:
         limits:
           cpus: "1.0"
           memory: 768M
-    restart: unless-stopped
+    # read_only: true
+    # cap_drop: [ALL]
+    # security_opt:
+    #   - no-new-privileges:true
+    # restart: unless-stopped
   memcached:
+    <<: *hardening
     build:
       context: ./memcached
     image: memcached:1.0
@@ -48,10 +58,6 @@ services:
     # no command: needed, the Dockerfile CMD sets the flags
     networks:
       - backend
-    read_only: true
-    cap_drop: [ALL]
-    security_opt:
-      - no-new-privileges:true
     healthcheck:
       test: ["CMD-SHELL", "echo stats | nc -w 2 127.0.0.1 11211 | grep -q uptime"]
       interval: 30s
@@ -63,8 +69,13 @@ services:
         limits:
           cpus: "0.25"
           memory: 192M
-    restart: unless-stopped
+    # read_only: true
+    # cap_drop: [ALL]
+    # security_opt:
+    #   - no-new-privileges:true
+    # restart: unless-stopped
   rabbitmq:
+    <<: *hardening
     build:
       context: ./rabbitmq
     image: rabbitmq:1.0
@@ -77,13 +88,8 @@ services:
       - rabbitmq_data:/var/lib/rabbitmq   # rabbitmq.conf is now inside the image
     networks:
       - backend
-    read_only: true
     tmpfs:
       - /tmp
-    cap_drop:
-      - ALL
-    security_opt:
-      - no-new-privileges:true
     healthcheck:
       test: ["CMD", "rabbitmq-diagnostics", "-q", "ping"]
       interval: 30s
@@ -95,8 +101,14 @@ services:
         limits:
           cpus: "1.0"
           memory: 512M
-    restart: unless-stopped
+    # read_only: true
+    # cap_drop:
+    #   - ALL
+    # security_opt:
+    #   - no-new-privileges:true
+    # restart: unless-stopped
   tomcat:
+    <<: *hardening
     build:
       context: ./tomcat
       args:
@@ -123,16 +135,12 @@ services:
         condition: service_healthy
       rabbitmq:
         condition: service_healthy
-    read_only: true
     tmpfs:
       - /tmp
       - /usr/local/tomcat/temp
       - /usr/local/tomcat/work
       - /usr/local/tomcat/logs
       - /run/appconfig:mode=0700,uid=10001,gid=10001
-    cap_drop: [ALL]
-    security_opt:
-      - no-new-privileges:true
     healthcheck:
       test: ["CMD", "curl", "-fsS", "-o", "/dev/null", "http://localhost:8080/login"]
       interval: 30s
@@ -144,8 +152,13 @@ services:
         limits:
           cpus: "1.0"
           memory: 768M
-    restart: unless-stopped
+    # read_only: true
+    # cap_drop: [ALL]
+    # security_opt:
+    #   - no-new-privileges:true
+    # restart: unless-stopped
   nginx:
+    <<: *hardening
     build:
       context: ./nginx
     image: nginx-proxy:1.0
@@ -157,12 +170,8 @@ services:
     depends_on:
       tomcat:
         condition: service_healthy
-    read_only: true
     tmpfs:
       - /tmp
-    cap_drop: [ALL]
-    security_opt:
-      - no-new-privileges:true
     healthcheck:
       test: ["CMD", "wget", "-q", "-O", "/dev/null", "http://127.0.0.1:8080/nginx-health"]
       interval: 30s
@@ -174,7 +183,11 @@ services:
         limits:
           cpus: "0.50"
           memory: 128M
-    restart: unless-stopped  
+    # read_only: true
+    # cap_drop: [ALL]
+    # security_opt:
+    #   - no-new-privileges:true
+    # restart: unless-stopped  
   
 networks:
   frontend:               # NGINX <-> Tomcat
