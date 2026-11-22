@@ -1,0 +1,9 @@
+# real configuration and credentials
+.env
+secrets/*
+!secrets/.gitkeep
+
+# build output and backups
+tomcat/app/target/
+*.war
+backups/

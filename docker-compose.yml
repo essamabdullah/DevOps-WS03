@@ -1,0 +1,198 @@
+name: enterprise          # fixes the project name, so volumes are enterprise_db_data etc.
+
+services:
+  # added step by step
+  mariadb:
+    build: 
+      context: ./mariadb    # folder with Dockerfile + init.sql
+    image: mariadb:1.0      # name for the built image
+    user: "999:999"         # same as the Dockerfile USER, stated explicitly
+
+    environment:
+      MARIADB_ROOT_PASSWORD_FILE: /run/secrets/db_root_password
+      MARIADB_DATABASE: ${DB_NAME}
+      MARIADB_USER: ${DB_USER}
+      MARIADB_PASSWORD_FILE: /run/secrets/db_password
+
+    secrets:
+      - db_root_password
+      - db_password
+    volumes:
+      - db_data:/var/lib/mysql   # init.sql is now inside the image
+    networks:
+      - backend                  # no ports: section at all
+    read_only: true
+    tmpfs:
+      - /tmp
+      - /run/mysqld              # socket and pid file
+    cap_drop: [ALL]
+    security_opt:
+      - no-new-privileges:true
+    healthcheck:                 # overrides the Dockerfile HEALTHCHECK
+      test: ["CMD", "healthcheck.sh", "--connect", "--innodb_initialized"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 60s
+    deploy:
+      resources:
+        limits:
+          cpus: "1.0"
+          memory: 768M
+    restart: unless-stopped
+  memcached:
+    build:
+      context: ./memcached
+    image: memcached:1.0
+    user: "11211:11211"
+    # no command: needed, the Dockerfile CMD sets the flags
+    networks:
+      - backend
+    read_only: true
+    cap_drop: [ALL]
+    security_opt:
+      - no-new-privileges:true
+    healthcheck:
+      test: ["CMD-SHELL", "echo stats | nc -w 2 127.0.0.1 11211 | grep -q uptime"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 10s
+    deploy:
+      resources:
+        limits:
+          cpus: "0.25"
+          memory: 192M
+    restart: unless-stopped
+  rabbitmq:
+    build:
+      context: ./rabbitmq
+    image: rabbitmq:1.0
+    user: "999:999"
+    hostname: rabbitmq    # pins the node name rabbit@rabbitmq (see below)
+    secrets:
+      - source: rabbitmq_credentials
+        target: /etc/rabbitmq/conf.d/90-credentials.conf
+    volumes:
+      - rabbitmq_data:/var/lib/rabbitmq   # rabbitmq.conf is now inside the image
+    networks:
+      - backend
+    read_only: true
+    tmpfs:
+      - /tmp
+    cap_drop:
+      - ALL
+    security_opt:
+      - no-new-privileges:true
+    healthcheck:
+      test: ["CMD", "rabbitmq-diagnostics", "-q", "ping"]
+      interval: 30s
+      timeout: 10s
+      retries: 5
+      start_period: 60s
+    deploy:
+      resources:
+        limits:
+          cpus: "1.0"
+          memory: 512M
+    restart: unless-stopped
+  tomcat:
+    build:
+      context: ./tomcat
+      args:
+        JAVA_VERSION: "11"            # the version from Step 2
+    image: enterprise/tomcat-app:1.0
+    user: "10001:10001"
+    environment:
+      DB_HOST: mariadb
+      DB_NAME: ${DB_NAME}
+      DB_USER: ${DB_USER}
+      DB_PASSWORD_FILE: /run/secrets/db_password
+      MEMCACHED_HOST: memcached
+      RABBITMQ_HOST: rabbitmq
+      RABBITMQ_USER: ${RABBITMQ_USER}
+      RABBITMQ_PASSWORD_FILE: /run/secrets/rabbitmq_password
+      JAVA_OPTS: "-XX:MaxRAMPercentage=75.0 -Dorg.jboss.logging.provider=slf4j"
+    secrets: [db_password, rabbitmq_password]
+    expose: ["8080"]
+    networks: [frontend, backend]
+    depends_on:
+      mariadb:
+        condition: service_healthy
+      memcached:
+        condition: service_healthy
+      rabbitmq:
+        condition: service_healthy
+    read_only: true
+    tmpfs:
+      - /tmp
+      - /usr/local/tomcat/temp
+      - /usr/local/tomcat/work
+      - /usr/local/tomcat/logs
+      - /run/appconfig:mode=0700,uid=10001,gid=10001
+    cap_drop: [ALL]
+    security_opt:
+      - no-new-privileges:true
+    healthcheck:
+      test: ["CMD", "curl", "-fsS", "-o", "/dev/null", "http://localhost:8080/login"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 90s
+    deploy:
+      resources:
+        limits:
+          cpus: "1.0"
+          memory: 768M
+    restart: unless-stopped
+  nginx:
+    build:
+      context: ./nginx
+    image: nginx-proxy:1.0
+    user: "10001:10001"
+    ports:
+      - "80:8080"               # the ONLY published port in the whole project
+    networks:
+      - frontend                # not on backend: NGINX cannot see the databases
+    depends_on:
+      tomcat:
+        condition: service_healthy
+    read_only: true
+    tmpfs:
+      - /tmp
+    cap_drop: [ALL]
+    security_opt:
+      - no-new-privileges:true
+    healthcheck:
+      test: ["CMD", "wget", "-q", "-O", "/dev/null", "http://127.0.0.1:8080/nginx-health"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 10s
+    deploy:
+      resources:
+        limits:
+          cpus: "0.50"
+          memory: 128M
+    restart: unless-stopped  
+  
+networks:
+  frontend:               # NGINX <-> Tomcat
+    driver: bridge
+  backend:                # Tomcat <-> MariaDB, Memcached, RabbitMQ
+    driver: bridge
+    internal: true        # no route to or from the outside world
+
+volumes:
+  db_data:
+  rabbitmq_data:
+
+secrets:
+  db_root_password:
+    file: ./secrets/db_root_password.txt
+  db_password:
+    file: ./secrets/db_password.txt
+  rabbitmq_password:
+    file: ./secrets/rabbitmq_password.txt
+  rabbitmq_credentials:
+    file: ./secrets/rabbitmq_credentials.conf
