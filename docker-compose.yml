@@ -44,11 +44,7 @@ services:
         limits:
           cpus: "1.0"
           memory: 768M
-    # read_only: true
-    # cap_drop: [ALL]
-    # security_opt:
-    #   - no-new-privileges:true
-    # restart: unless-stopped
+
   memcached:
     <<: *hardening
     build:
@@ -69,11 +65,7 @@ services:
         limits:
           cpus: "0.25"
           memory: 192M
-    # read_only: true
-    # cap_drop: [ALL]
-    # security_opt:
-    #   - no-new-privileges:true
-    # restart: unless-stopped
+
   rabbitmq:
     <<: *hardening
     build:
@@ -101,12 +93,7 @@ services:
         limits:
           cpus: "1.0"
           memory: 512M
-    # read_only: true
-    # cap_drop:
-    #   - ALL
-    # security_opt:
-    #   - no-new-privileges:true
-    # restart: unless-stopped
+
   tomcat:
     <<: *hardening
     build:
@@ -152,11 +139,7 @@ services:
         limits:
           cpus: "1.0"
           memory: 768M
-    # read_only: true
-    # cap_drop: [ALL]
-    # security_opt:
-    #   - no-new-privileges:true
-    # restart: unless-stopped
+
   nginx:
     <<: *hardening
     build:
@@ -183,11 +166,6 @@ services:
         limits:
           cpus: "0.50"
           memory: 128M
-    # read_only: true
-    # cap_drop: [ALL]
-    # security_opt:
-    #   - no-new-privileges:true
-    # restart: unless-stopped  
   
 networks:
   frontend:               # NGINX <-> Tomcat
